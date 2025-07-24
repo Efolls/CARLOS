@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #2C2C2C;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 480px;
+            height: 320px;
+            background: #1a1a1a;
+            overflow: hidden;
+            border: 2px solid #333;
+        }
+        
+        canvas {
+            display: block;
+            background: transparent;
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 5px;
+            left: 5px;
+            color: white;
+            font-size: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+        
+        #turn {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="480" height="320"></canvas>
+        <div id="turn">White to move</div>
+        <div id="info">Use arrows + Enter</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const turnElement = document.getElementById('turn');
+        
+        const BOARD_SIZE = 8;
+        const SQUARE_SIZE = 38;
+        const BOARD_OFFSET_X = 88;
+        const BOARD_OFFSET_Y = 12;
+        
+        let currentTurn = 'white';
+        let selectedSquare = null;
+        let cursorX = 0;
+        let cursorY = 0;
+        let legalMoves = [];
+        
+        // Initialize board with starting position
+        const board = [
+            ['r','n','b','q','k','b','n','r'],
+            ['p','p','p','p','p','p','p','p'],
+            [null,null,null,null,null,null,null,null],
+            [null,null,null,null,null,null,null,null],
+            [null,null,null,null,null,null,null,null],
+            [null,null,null,null,null,null,null,null],
+            ['P','P','P','P','P','P','P','P'],
+            ['R','N','B','Q','K','B','N','R']
+        ];
+        
+        function isWhitePiece(piece) {
+            return piece && piece === piece.toUpperCase();
+        }
+        
+        function isBlackPiece(piece) {
+            return piece && piece === piece.toLowerCase();
+        }
+        
+        function getPieceColor(piece) {
+            if (!piece) return null;
+            return isWhitePiece(piece) ? 'white' : 'black';
+        }
+        
+        function isValidSquare(x, y) {
+            return x >= 0 && x < 8 && y >= 0 && y < 8;
+        }
+        
+        function getLegalMoves(fromX, fromY) {
+            const piece = board[fromY][fromX];
+            if (!piece) return [];
+            
+            const moves = [];
+            const pieceType = piece.toLowerCase();
+            const isWhite = isWhitePiece(piece);
+            
+            // Pawn moves
+            if (pieceType === 'p') {
+                const direction = isWhite ? -1 : 1;
+                const startRow = isWhite ? 6 : 1;
+                
+                // Forward move
+                if (isValidSquare(fromX, fromY + direction) && !board[fromY + direction][fromX]) {
+                    moves.push([fromX, fromY + direction]);
+                    
+                    // Double move from start
+                    if (fromY === startRow && !board[fromY + 2 * direction][fromX]) {
+                        moves.push([fromX, fromY + 2 * direction]);
+                    }
+                }
+                
+                // Captures
+                [-1, 1].forEach(dx => {
+                    const newX = fromX + dx;
+                    const newY = fromY + direction;
+                    if (isValidSquare(newX, newY)) {
+                        const targetPiece = board[newY][newX];
+                        if (targetPiece && getPieceColor(targetPiece) !== getPieceColor(piece)) {
+                            moves.push([newX, newY]);
+                        }
+                    }
+                });
+            }
+            
+            // Rook moves
+            if (pieceType === 'r') {
+                const directions = [[0,1], [0,-1], [1,0], [-1,0]];
+                directions.forEach(([dx, dy]) => {
+                    for (let i = 1; i < 8; i++) {
+                        const newX = fromX + dx * i;
+                        const newY = fromY + dy * i;
+                        if (!isValidSquare(newX, newY)) break;
+                        
+                        const targetPiece = board[newY][newX];
+                        if (!targetPiece) {
+                            moves.push([newX, newY]);
+                        } else {
+                            if (getPieceColor(targetPiece) !== getPieceColor(piece)) {
+                                moves.push([newX, newY]);
+                            }
+                            break;
+                        }
+                    }
+                });
+            }
+            
+            // Bishop moves
+            if (pieceType === 'b') {
+                const directions = [[1,1], [1,-1], [-1,1], [-1,-1]];
+                directions.forEach(([dx, dy]) => {
+                    for (let i = 1; i < 8; i++) {
+                        const newX = fromX + dx * i;
+                        const newY = fromY + dy * i;
+                        if (!isValidSquare(newX, newY)) break;
+                        
+                        const targetPiece = board[newY][newX];
+                        if (!targetPiece) {
+                            moves.push([newX, newY]);
+                        } else {
+                            if (getPieceColor(targetPiece) !== getPieceColor(piece)) {
+                                moves.push([newX, newY]);
+                            }
+                            break;
+                        }
+                    }
+                });
+            }
+            
+            // Queen moves (combine rook and bishop)
+            if (pieceType === 'q') {
+                const directions = [[0,1], [0,-1], [1,0], [-1,0], [1,1], [1,-1], [-1,1], [-1,-1]];
+                directions.forEach(([dx, dy]) => {
+                    for (let i = 1; i < 8; i++) {
+                        const newX = fromX + dx * i;
+                        const newY = fromY + dy * i;
+                        if (!isValidSquare(newX, newY)) break;
+                        
+                        const targetPiece = board[newY][newX];
+                        if (!targetPiece) {
+                            moves.push([newX, newY]);
+                        } else {
+                            if (getPieceColor(targetPiece) !== getPieceColor(piece)) {
+                                moves.push([newX, newY]);
+                            }
+                            break;
+                        }
+                    }
+                });
+            }
+            
+            // Knight moves
+            if (pieceType === 'n') {
+                const knightMoves = [[2,1], [2,-1], [-2,1], [-2,-1], [1,2], [1,-2], [-1,2], [-1,-2]];
+                knightMoves.forEach(([dx, dy]) => {
+                    const newX = fromX + dx;
+                    const newY = fromY + dy;
+                    if (isValidSquare(newX, newY)) {
+                        const targetPiece = board[newY][newX];
+                        if (!targetPiece || getPieceColor(targetPiece) !== getPieceColor(piece)) {
+                            moves.push([newX, newY]);
+                        }
+                    }
+                });
+            }
+            
+            // King moves
+            if (pieceType === 'k') {
+                const kingMoves = [[0,1], [0,-1], [1,0], [-1,0], [1,1], [1,-1], [-1,1], [-1,-1]];
+                kingMoves.forEach(([dx, dy]) => {
+                    const newX = fromX + dx;
+                    const newY = fromY + dy;
+                    if (isValidSquare(newX, newY)) {
+                        const targetPiece = board[newY][newX];
+                        if (!targetPiece || getPieceColor(targetPiece) !== getPieceColor(piece)) {
+                            moves.push([newX, newY]);
+                        }
+                    }
+                });
+            }
+            
+            return moves;
+        }
+        
+        function drawPiece(piece, x, y) {
+            const centerX = x + SQUARE_SIZE / 2;
+            const centerY = y + SQUARE_SIZE / 2;
+            const size = 14;
+            
+            // Set piece color
+            ctx.fillStyle = isWhitePiece(piece) ? '#FFFFFF' : '#000000';
+            ctx.strokeStyle = isWhitePiece(piece) ? '#000000' : '#FFFFFF';
+            ctx.lineWidth = 1;
+            
+            const pieceType = piece.toLowerCase();
+            
+            switch (pieceType) {
+                case 'p': // Pawn - simple circle
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    break;
+                    
+                case 'r': // Rook - rectangle with crenellations
+                    ctx.fillRect(centerX - size/2, centerY - size/2, size, size);
+                    ctx.strokeRect(centerX - size/2, centerY - size/2, size, size);
+                    // Crenellations
+                    ctx.fillRect(centerX - size/2, centerY - size/2, 2, 3);
+                    ctx.fillRect(centerX + size/2 - 2, centerY - size/2, 2, 3);
+                    break;
+                    
+                case 'n': // Knight - L shape
+                    ctx.fillRect(centerX - size/2, centerY - size/2 + 2, size, size - 2);
+                    ctx.fillRect(centerX - size/2 + 2, centerY - size/2, size/2, 4);
+                    ctx.strokeRect(centerX - size/2, centerY - size/2 + 2, size, size - 2);
+                    ctx.strokeRect(centerX - size/2 + 2, centerY - size/2, size/2, 4);
+                    break;
+                    
+                case 'b': // Bishop - diamond
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, centerY - size/2);
+                    ctx.lineTo(centerX + size/2, centerY);
+                    ctx.lineTo(centerX, centerY + size/2);
+                    ctx.lineTo(centerX - size/2, centerY);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    break;
+                    
+                case 'q': // Queen - large circle with crown
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    // Crown points
+                    ctx.fillRect(centerX - 1, centerY - size/2 - 2, 2, 3);
+                    ctx.fillRect(centerX - 4, centerY - size/2 - 1, 2, 2);
+                    ctx.fillRect(centerX + 2, centerY - size/2 - 1, 2, 2);
+                    break;
+                    
+                case 'k': // King - rectangle with cross
+                    ctx.fillRect(centerX - size/2, centerY - size/2, size, size);
+                    ctx.strokeRect(centerX - size/2, centerY - size/2, size, size);
+                    // Cross
+                    ctx.fillRect(centerX - 1, centerY - size/2 - 3, 2, 6);
+                    ctx.fillRect(centerX - 3, centerY - size/2 - 1, 6, 2);
+                    break;
+            }
+        }
+        
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#2C2C2C';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw board
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    const squareX = BOARD_OFFSET_X + x * SQUARE_SIZE;
+                    const squareY = BOARD_OFFSET_Y + y * SQUARE_SIZE;
+                    
+                    // Square color
+                    const isLight = (x + y) % 2 === 0;
+                    ctx.fillStyle = isLight ? '#F0D9B5' : '#B58863';
+                    ctx.fillRect(squareX, squareY, SQUARE_SIZE, SQUARE_SIZE);
+                    
+                    // Highlight cursor
+                    if (x === cursorX && y === cursorY) {
+                        ctx.fillStyle = 'rgba(255, 255, 0, 0.5)';
+                        ctx.fillRect(squareX, squareY, SQUARE_SIZE, SQUARE_SIZE);
+                    }
+                    
+                    // Highlight selected square
+                    if (selectedSquare && selectedSquare[0] === x && selectedSquare[1] === y) {
+                        ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+                        ctx.fillRect(squareX, squareY, SQUARE_SIZE, SQUARE_SIZE);
+                    }
+                    
+                    // Highlight legal moves
+                    if (legalMoves.some(move => move[0] === x && move[1] === y)) {
+                        ctx.fillStyle = 'rgba(0, 0, 255, 0.3)';
+                        ctx.fillRect(squareX, squareY, SQUARE_SIZE, SQUARE_SIZE);
+                    }
+                    
+                    // Draw piece
+                    const piece = board[y][x];
+                    if (piece) {
+                        drawPiece(piece, squareX, squareY);
+                    }
+                }
+            }
+        }
+        
+        function makeMove(fromX, fromY, toX, toY) {
+            board[toY][toX] = board[fromY][fromX];
+            board[fromY][fromX] = null;
+            
+            // Switch turns
+            currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            turnElement.textContent = currentTurn === 'white' ? 'White to move' : 'Black to move';
+            
+            // Clear selection
+            selectedSquare = null;
+            legalMoves = [];
+        }
+        
+        function handleKeyPress(event) {
+            switch (event.key) {
+                case 'ArrowUp':
+                    cursorY = Math.max(0, cursorY - 1);
+                    break;
+                case 'ArrowDown':
+                    cursorY = Math.min(7, cursorY + 1);
+                    break;
+                case 'ArrowLeft':
+                    cursorX = Math.max(0, cursorX - 1);
+                    break;
+                case 'ArrowRight':
+                    cursorX = Math.min(7, cursorX + 1);
+                    break;
+                case 'Enter':
+                    if (selectedSquare) {
+                        // Check if cursor is on a legal move
+                        const isLegalMove = legalMoves.some(move => move[0] === cursorX && move[1] === cursorY);
+                        if (isLegalMove) {
+                            makeMove(selectedSquare[0], selectedSquare[1], cursorX, cursorY);
+                        } else {
+                            // Deselect
+                            selectedSquare = null;
+                            legalMoves = [];
+                        }
+                    } else {
+                        // Select piece if it belongs to current player
+                        const piece = board[cursorY][cursorX];
+                        if (piece && getPieceColor(piece) === currentTurn) {
+                            selectedSquare = [cursorX, cursorY];
+                            legalMoves = getLegalMoves(cursorX, cursorY);
+                        }
+                    }
+                    break;
+            }
+            draw();
+        }
+        
+        // Event listeners
+        document.addEventListener('keydown', handleKeyPress);
+        
+        // Initial draw
+        draw();
+    </script>
+</body>
+</html>
